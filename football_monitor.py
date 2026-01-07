@@ -268,10 +268,33 @@ def analyze_matches_with_ai(matches):
         # 使用API key调用Gemini
         client = genai.Client(api_key=gemini_api_key)
         
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt,
-        )
+        # 尝试不同的模型名称（优先使用免费的）
+        models_to_try = [
+            "gemini-3-flash-preview",  # 免费额度
+            "models/gemini-3-flash-preview",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash",
+            "gemini-pro",
+            "models/gemini-1.5-flash-latest",
+            "models/gemini-pro"
+        ]
+        
+        response = None
+        for model_name in models_to_try:
+            try:
+                print(f"🔄 尝试模型: {model_name}")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                print(f"✅ 模型 {model_name} 成功")
+                break
+            except Exception as model_error:
+                print(f"❌ 模型 {model_name} 失败: {model_error}")
+                continue
+        
+        if not response:
+            raise Exception("所有模型都不可用")
         
         ai_analysis = response.text.strip()
         print("✅ AI分析完成")
@@ -307,8 +330,8 @@ def analyze_matches_simple(matches):
             if competitions:
                 competitors = competitions[0].get('competitors', [])
                 if len(competitors) >= 2:
-                    home_score = competitors[0].get('score', 0)
-                    away_score = competitors[1].get('score', 0)
+                    home_score = int(competitors[0].get('score', 0))
+                    away_score = int(competitors[1].get('score', 0))
                     total_goals = home_score + away_score
                     score_diff = abs(home_score - away_score)
                     
