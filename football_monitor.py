@@ -220,6 +220,38 @@ def generate_football_summary(matches):
     
     return "\n".join(summary_lines)
 
+def send_startup_notification():
+    """发送足球监控启动通知"""
+    webhook_url = os.getenv('DISCORD_WEBHOOK')
+    if not webhook_url:
+        print("警告: 未设置 DISCORD_WEBHOOK 环境变量")
+        return
+    
+    webhook_type = detect_webhook_type(webhook_url)
+    
+    # 创建启动通知消息
+    title = "⚽ 足球监控启动"
+    content = f"欧洲足球比赛监控程序已启动\n开始检查今日足球比赛结果...\n\n⏰ 运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    
+    if webhook_type == "lark":
+        data = create_lark_message(title, content, "blue")
+    else:
+        data = create_discord_message(title, content, 3447003)
+    
+    try:
+        print(f"📤 正在发送足球监控启动通知...")
+        response = requests.post(webhook_url, json=data, timeout=10)
+        
+        expected_status = 200 if webhook_type == "lark" else 204
+        
+        if response.status_code == expected_status:
+            print("✅ 成功发送启动通知")
+        else:
+            print(f"❌ 启动通知发送失败，状态码: {response.status_code}")
+            print(f"响应内容: {response.text}")
+    except Exception as e:
+        print(f"❌ 发送启动通知时出错: {e}")
+
 def send_football_summary(matches):
     """发送足球比赛摘要到webhook"""
     webhook_url = os.getenv('DISCORD_WEBHOOK')
@@ -264,12 +296,20 @@ def main():
     github_event = os.getenv('GITHUB_EVENT_NAME', 'local')
     print(f"🔧 运行环境: {github_event}")
     
+    is_manual_run = github_event in ['workflow_dispatch', 'local']
+    
     if github_event == 'schedule':
-        print("📅 这是自动调度运行")
+        print("📅 这是自动调度运行 - 跳过启动通知")
     elif github_event == 'workflow_dispatch':
-        print("🔧 这是手动触发运行")
+        print("🔧 这是手动触发运行 - 发送启动通知")
     else:
-        print("💻 这是本地运行")
+        print("💻 这是本地运行 - 发送启动通知")
+    
+    # 智能启动通知：只在手动运行时发送
+    if is_manual_run:
+        send_startup_notification()
+    else:
+        print("ℹ️ 自动调度运行，跳过启动通知")
     
     try:
         # 获取足球比赛数据
