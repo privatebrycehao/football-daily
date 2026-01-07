@@ -1,0 +1,307 @@
+import os
+import requests
+import time
+from datetime import datetime, date, timedelta
+import pytz
+
+# 设置请求头，避免被识别为爬虫
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
+    'Referer': 'https://www.espn.com/'
+}
+
+def get_pacific_time_date():
+    """获取美西时间的当前日期"""
+    try:
+        # 美西时区（自动处理夏令时）
+        pacific_tz = pytz.timezone('US/Pacific')
+        utc_now = datetime.now(pytz.UTC)
+        pacific_now = utc_now.astimezone(pacific_tz)
+        
+        print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        print(f"🕐 美西时间: {pacific_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        
+        return pacific_now.date()
+    except ImportError:
+        # 如果pytz不可用，使用简单的时区偏移
+        print("⚠️ pytz不可用，使用简单时区计算")
+        utc_now = datetime.utcnow()
+        # 假设PST (UTC-8)
+        pacific_now = utc_now - timedelta(hours=8)
+        
+        print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print(f"🕐 美西时间(估算): {pacific_now.strftime('%Y-%m-%d %H:%M:%S')} PST")
+        
+        return pacific_now.date()
+
+def detect_webhook_type(webhook_url):
+    """检测webhook类型"""
+    if "discord" in webhook_url.lower():
+        return "discord"
+    elif "larksuite.com" in webhook_url.lower() or "feishu" in webhook_url.lower():
+        return "lark"
+    else:
+        return "unknown"
+
+def create_lark_message(title, content, color="green"):
+    """创建飞书消息格式"""
+    color_map = {
+        "green": "green",
+        "red": "red", 
+        "blue": "blue",
+        "yellow": "yellow",
+        "grey": "grey"
+    }
+    
+    return {
+        "msg_type": "interactive",
+        "card": {
+            "elements": [
+                {
+                    "tag": "div",
+                    "text": {
+                        "content": f"**{title}**\n\n{content}",
+                        "tag": "lark_md"
+                    }
+                }
+            ],
+            "header": {
+                "title": {
+                    "content": title,
+                    "tag": "plain_text"
+                },
+                "template": color_map.get(color, "green")
+            }
+        }
+    }
+
+def create_discord_message(title, content, color=65280):
+    """创建Discord消息格式"""
+    return {
+        "content": f"⚽ **{title}**",
+        "embeds": [{
+            "title": title,
+            "description": content,
+            "color": color,
+            "footer": {"text": "由 GitHub Actions 自动监控"}
+        }]
+    }
+
+def get_football_matches_from_espn():
+    """从ESPN获取足球比赛数据"""
+    print("⚽ 尝试使用ESPN API获取足球比赛数据...")
+    
+    # 获取美西时间日期
+    pacific_today = get_pacific_time_date()
+    
+    # 定义要监控的联赛
+    leagues = {
+        "UEFA Champions League": "uefa.champions",
+        "UEFA Europa League": "uefa.europa", 
+        "English Premier League": "eng.1",
+        "Spanish La Liga": "esp.1",
+        "German Bundesliga": "ger.1",
+        "Italian Serie A": "ita.1"
+    }
+    
+    all_matches = []
+    
+    for league_name, league_id in leagues.items():
+        try:
+            # 尝试今天和昨天的日期
+            for check_date in [pacific_today, pacific_today - timedelta(days=1)]:
+                date_str = check_date.strftime('%Y%m%d')
+                espn_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_id}/scoreboard?dates={date_str}"
+                
+                print(f"  检查 {league_name} - 日期: {date_str}")
+                
+                response = requests.get(espn_url, timeout=30, headers=headers)
+                if response.status_code != 200:
+                    print(f"    ESPN API响应错误: {response.status_code}")
+                    continue
+                
+                data = response.json()
+                events = data.get('events', [])
+                
+                # 过滤已完成的比赛
+                completed_matches = []
+                for event in events:
+                    status = event.get('status', {}).get('type', {}).get('name', '')
+                    if status == 'STATUS_FINAL':
+                        completed_matches.append({
+                            'league': league_name,
+                            'event': event,
+                            'date': check_date
+                        })
+                
+                if completed_matches:
+                    print(f"    找到 {len(completed_matches)} 场已完成的比赛")
+                    all_matches.extend(completed_matches)
+                else:
+                    print(f"    没有找到已完成的比赛")
+        
+        except Exception as e:
+            print(f"  获取 {league_name} 数据失败: {e}")
+            continue
+    
+    return all_matches
+
+def format_match_result(match):
+    """格式化单场比赛结果"""
+    try:
+        event = match['event']
+        league = match['league']
+        
+        # 获取比赛信息
+        competitions = event.get('competitions', [{}])
+        if not competitions:
+            return f"⚽ {league}: 比赛信息不完整"
+        
+        competition = competitions[0]
+        competitors = competition.get('competitors', [])
+        
+        if len(competitors) < 2:
+            return f"⚽ {league}: 队伍信息不完整"
+        
+        # 通常home是第一个，away是第二个
+        home_team = competitors[0]
+        away_team = competitors[1]
+        
+        # 获取队名和比分
+        home_name = home_team.get('team', {}).get('displayName', 'Unknown')
+        away_name = away_team.get('team', {}).get('displayName', 'Unknown')
+        home_score = home_team.get('score', 0)
+        away_score = away_team.get('score', 0)
+        
+        # 简化队名（取最后一个单词或前15个字符）
+        home_short = home_name.split()[-1] if ' ' in home_name else home_name[:15]
+        away_short = away_name.split()[-1] if ' ' in away_name else away_name[:15]
+        
+        # 格式化结果
+        result = f"⚽ **{league}**: {away_short} {away_score} - {home_score} {home_short}"
+        
+        return result
+        
+    except Exception as e:
+        return f"⚽ {match.get('league', 'Unknown')}: 解析比赛数据失败 - {e}"
+
+def generate_football_summary(matches):
+    """生成足球比赛摘要"""
+    if not matches:
+        return "今日没有足球比赛结果"
+    
+    # 按联赛分组
+    leagues_matches = {}
+    for match in matches:
+        league = match['league']
+        if league not in leagues_matches:
+            leagues_matches[league] = []
+        leagues_matches[league].append(match)
+    
+    summary_lines = []
+    total_matches = len(matches)
+    
+    summary_lines.append(f"📊 **今日足球比赛总结** ({total_matches} 场比赛)")
+    summary_lines.append("")
+    
+    # 按联赛显示结果
+    for league, league_matches in leagues_matches.items():
+        summary_lines.append(f"🏆 **{league}** ({len(league_matches)} 场)")
+        
+        for match in league_matches:
+            result = format_match_result(match)
+            summary_lines.append(f"   {result}")
+        
+        summary_lines.append("")  # 联赛间空行
+    
+    return "\n".join(summary_lines)
+
+def send_football_summary(matches):
+    """发送足球比赛摘要到webhook"""
+    webhook_url = os.getenv('DISCORD_WEBHOOK')
+    if not webhook_url:
+        print("警告: 未设置 DISCORD_WEBHOOK 环境变量")
+        return
+    
+    webhook_type = detect_webhook_type(webhook_url)
+    print(f"🔍 检测到webhook类型: {webhook_type}")
+    
+    # 生成摘要
+    summary = generate_football_summary(matches)
+    
+    # 创建消息
+    title = "⚽ 欧洲足球比赛日报"
+    content = f"{summary}\n\n⏰ 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    
+    if webhook_type == "lark":
+        data = create_lark_message(title, content, "blue")
+    else:
+        data = create_discord_message(title, content, 3447003)
+    
+    try:
+        print(f"📤 正在发送足球比赛摘要...")
+        response = requests.post(webhook_url, json=data, timeout=10)
+        
+        expected_status = 200 if webhook_type == "lark" else 204
+        
+        if response.status_code == expected_status:
+            print("✅ 成功发送足球比赛摘要")
+        else:
+            print(f"❌ 发送失败，状态码: {response.status_code}")
+            print(f"响应内容: {response.text}")
+    except Exception as e:
+        print(f"❌ 发送webhook时出错: {e}")
+
+def main():
+    """主函数"""
+    print("⚽ 欧洲足球比赛监控启动...")
+    
+    # 显示运行环境信息
+    github_event = os.getenv('GITHUB_EVENT_NAME', 'local')
+    print(f"🔧 运行环境: {github_event}")
+    
+    if github_event == 'schedule':
+        print("📅 这是自动调度运行")
+    elif github_event == 'workflow_dispatch':
+        print("🔧 这是手动触发运行")
+    else:
+        print("💻 这是本地运行")
+    
+    try:
+        # 获取足球比赛数据
+        matches = get_football_matches_from_espn()
+        
+        print(f"📊 总共找到 {len(matches)} 场已完成的比赛")
+        
+        # 发送摘要
+        send_football_summary(matches)
+        
+        print("✅ 足球监控完成")
+        
+    except Exception as e:
+        print(f"❌ 足球监控出错: {e}")
+        
+        # 发送错误通知
+        webhook_url = os.getenv('DISCORD_WEBHOOK')
+        if webhook_url:
+            webhook_type = detect_webhook_type(webhook_url)
+            
+            error_content = f"足球比赛监控程序遇到错误\n\n错误详情: {str(e)}\n\n⏰ 错误时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            
+            if webhook_type == "lark":
+                data = create_lark_message("⚠️ 足球监控错误", error_content, "red")
+            else:
+                data = create_discord_message("足球监控错误", error_content, 15158332)
+            
+            try:
+                requests.post(webhook_url, json=data, timeout=10)
+                print("✅ 已发送错误通知")
+            except:
+                print("❌ 发送错误通知失败")
+
+if __name__ == "__main__":
+    main()
