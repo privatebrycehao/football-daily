@@ -154,8 +154,8 @@ def get_football_matches_from_espn():
                     status = event.get('status', {}).get('type', {}).get('name', '')
                     status_counts[status] = status_counts.get(status, 0) + 1
                     
-                    # 检查已完成的比赛
-                    if status == 'STATUS_FINAL':
+                    # 检查已完成的比赛（支持多种完成状态）
+                    if status in ['STATUS_FINAL', 'STATUS_FULL_TIME']:
                         completed_matches.append({
                             'league': league_name,
                             'event': event,
