@@ -24,17 +24,19 @@ def get_pacific_time_date():
         
         print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         print(f"🕐 美西时间: {pacific_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        print(f"🕐 时区偏移: {pacific_now.strftime('%z')}")
         
         return pacific_now.date()
     except ImportError:
         # 如果pytz不可用，使用简单的时区偏移
         print("⚠️ pytz不可用，使用简单时区计算")
         utc_now = datetime.utcnow()
-        # 假设PST (UTC-8)
+        # 假设PST (UTC-8)，但实际应该检查夏令时
         pacific_now = utc_now - timedelta(hours=8)
         
         print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"🕐 美西时间(估算): {pacific_now.strftime('%Y-%m-%d %H:%M:%S')} PST")
+        print("⚠️ 注意：未考虑夏令时，可能有1小时误差")
         
         return pacific_now.date()
 
@@ -98,6 +100,17 @@ def get_football_matches_from_espn():
     # 获取美西时间日期
     pacific_today = get_pacific_time_date()
     
+    # 扩大检查范围：考虑到欧洲时区差异，检查今天、昨天、前天
+    # 欧洲比赛通常在欧洲时间进行，可能跨越美西时间的多个日期
+    check_dates = [
+        pacific_today,
+        pacific_today - timedelta(days=1),
+        pacific_today - timedelta(days=2)
+    ]
+    
+    print(f"📅 将检查以下美西时间日期: {[d.strftime('%Y-%m-%d') for d in check_dates]}")
+    print(f"💡 注意：欧洲比赛时间可能跨越多个美西日期")
+    
     # 定义要监控的联赛
     leagues = {
         "UEFA Champions League": "uefa.champions",
@@ -111,26 +124,37 @@ def get_football_matches_from_espn():
     all_matches = []
     
     for league_name, league_id in leagues.items():
+        print(f"\n🏆 检查联赛: {league_name}")
         try:
-            # 尝试今天和昨天的日期
-            for check_date in [pacific_today, pacific_today - timedelta(days=1)]:
+            league_matches_found = 0
+            
+            # 检查多个日期
+            for check_date in check_dates:
                 date_str = check_date.strftime('%Y%m%d')
                 espn_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_id}/scoreboard?dates={date_str}"
                 
-                print(f"  检查 {league_name} - 日期: {date_str}")
+                print(f"  📅 检查日期: {date_str} ({check_date.strftime('%Y-%m-%d')})")
+                print(f"  🔗 API URL: {espn_url}")
                 
                 response = requests.get(espn_url, timeout=30, headers=headers)
                 if response.status_code != 200:
-                    print(f"    ESPN API响应错误: {response.status_code}")
+                    print(f"    ❌ ESPN API响应错误: {response.status_code}")
                     continue
                 
                 data = response.json()
                 events = data.get('events', [])
                 
-                # 过滤已完成的比赛
+                print(f"    📊 API返回 {len(events)} 个事件")
+                
+                # 详细分析所有比赛状态
+                status_counts = {}
                 completed_matches = []
+                
                 for event in events:
                     status = event.get('status', {}).get('type', {}).get('name', '')
+                    status_counts[status] = status_counts.get(status, 0) + 1
+                    
+                    # 检查已完成的比赛
                     if status == 'STATUS_FINAL':
                         completed_matches.append({
                             'league': league_name,
@@ -138,14 +162,28 @@ def get_football_matches_from_espn():
                             'date': check_date
                         })
                 
+                print(f"    📈 比赛状态统计: {status_counts}")
+                
+                # 显示所有比赛
+                if events:
+                    for i, event in enumerate(events):
+                        name = event.get('name', 'Unknown Match')
+                        status = event.get('status', {}).get('type', {}).get('name', '')
+                        print(f"      {i+1}. {name} - {status}")
+                
                 if completed_matches:
-                    print(f"    找到 {len(completed_matches)} 场已完成的比赛")
+                    print(f"    ✅ 找到 {len(completed_matches)} 场已完成的比赛")
                     all_matches.extend(completed_matches)
+                    league_matches_found += len(completed_matches)
                 else:
-                    print(f"    没有找到已完成的比赛")
+                    print(f"    ⚪ 没有找到已完成的比赛")
+            
+            print(f"  🎯 {league_name} 总计找到: {league_matches_found} 场比赛")
         
         except Exception as e:
-            print(f"  获取 {league_name} 数据失败: {e}")
+            print(f"  ❌ 获取 {league_name} 数据失败: {e}")
+            import traceback
+            print(f"  📝 详细错误: {traceback.format_exc()}")
             continue
     
     return all_matches
