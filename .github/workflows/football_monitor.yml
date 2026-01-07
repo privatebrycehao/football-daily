@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests pytz
+          pip install requests pytz google-genai
 
       - name: Run Football Monitor
         env:

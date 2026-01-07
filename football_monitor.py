@@ -3,6 +3,12 @@ import requests
 import time
 from datetime import datetime, date, timedelta
 import pytz
+try:
+    from google import genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    print("⚠️ Google GenAI not available, will use simple analysis")
 
 # 设置请求头，避免被识别为爬虫
 headers = {
@@ -223,6 +229,141 @@ def format_match_result(match):
     except Exception as e:
         return f"⚽ {match.get('league', 'Unknown')}: 解析比赛数据失败 - {e}"
 
+def analyze_matches_with_ai(matches):
+    """使用Gemini AI分析足球比赛结果（无需API key）"""
+    if not GEMINI_AVAILABLE:
+        print("⚠️ Gemini不可用，使用简单分析")
+        return analyze_matches_simple(matches)
+    
+    if not matches:
+        return "没有比赛数据可供分析"
+    
+    try:
+        # 准备比赛数据给AI分析
+        match_data = []
+        for match in matches:
+            result = format_match_result(match)
+            match_data.append(result)
+        
+        matches_text = "\n".join(match_data)
+        
+        # 构建AI分析提示
+        prompt = f"""请分析以下足球比赛结果，提供简洁的分析（不超过200字）：
+
+{matches_text}
+
+请从以下角度分析：
+1. 今日比赛的亮点和意外结果
+2. 强队表现如何
+3. 有趣的比分或对阵
+4. 简要总结今日足球的看点
+
+请用中文回答，语言风格轻松有趣。"""
+
+        # 使用官方无需API key的方式调用Gemini
+        client = genai.Client()
+        
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=prompt,
+        )
+        
+        ai_analysis = response.text.strip()
+        print("✅ AI分析完成")
+        return ai_analysis
+        
+    except Exception as e:
+        print(f"❌ AI分析失败: {e}")
+        print("🔄 回退到简单分析")
+        return analyze_matches_simple(matches)
+
+def analyze_matches_simple(matches):
+    """基于规则的简单比赛分析"""
+    if not matches:
+        return "没有比赛数据可供分析"
+    
+    try:
+        analysis_points = []
+        total_matches = len(matches)
+        
+        # 统计各联赛比赛数量
+        league_counts = {}
+        high_scoring_games = []
+        big_wins = []
+        close_games = []
+        
+        for match in matches:
+            league = match['league']
+            league_counts[league] = league_counts.get(league, 0) + 1
+            
+            # 解析比分
+            event = match['event']
+            competitions = event.get('competitions', [{}])
+            if competitions:
+                competitors = competitions[0].get('competitors', [])
+                if len(competitors) >= 2:
+                    home_score = competitors[0].get('score', 0)
+                    away_score = competitors[1].get('score', 0)
+                    total_goals = home_score + away_score
+                    score_diff = abs(home_score - away_score)
+                    
+                    home_name = competitors[0].get('team', {}).get('displayName', 'Unknown')
+                    away_name = competitors[1].get('team', {}).get('displayName', 'Unknown')
+                    
+                    # 高比分比赛 (总进球>=5)
+                    if total_goals >= 5:
+                        high_scoring_games.append(f"{away_name} {away_score}-{home_score} {home_name}")
+                    
+                    # 大胜比赛 (净胜球>=3)
+                    if score_diff >= 3:
+                        big_wins.append(f"{away_name} {away_score}-{home_score} {home_name}")
+                    
+                    # 激烈比赛 (1球小胜)
+                    if score_diff == 1:
+                        close_games.append(f"{away_name} {away_score}-{home_score} {home_name}")
+        
+        # 生成分析
+        analysis_points.append(f"📊 今日共有 {total_matches} 场精彩比赛结束")
+        
+        # 联赛分布
+        active_leagues = [league for league, count in league_counts.items() if count > 0]
+        if len(active_leagues) > 1:
+            analysis_points.append(f"🏆 涉及 {len(active_leagues)} 个联赛，足球日程丰富")
+        
+        # 高比分比赛
+        if high_scoring_games:
+            analysis_points.append(f"⚽ 进球大战: {len(high_scoring_games)} 场比赛总进球数≥5个")
+            if len(high_scoring_games) <= 2:
+                for game in high_scoring_games:
+                    analysis_points.append(f"   • {game}")
+        
+        # 大胜比赛
+        if big_wins:
+            analysis_points.append(f"🎯 碾压式胜利: {len(big_wins)} 场比赛净胜球≥3个")
+            if len(big_wins) <= 2:
+                for game in big_wins[:2]:
+                    analysis_points.append(f"   • {game}")
+        
+        # 激烈比赛
+        if close_games:
+            analysis_points.append(f"🔥 激烈对决: {len(close_games)} 场比赛仅1球分胜负")
+        
+        # 总结
+        if high_scoring_games and big_wins:
+            analysis_points.append("⭐ 今日比赛既有进球大战，又有实力悬殊的较量，精彩纷呈！")
+        elif high_scoring_games:
+            analysis_points.append("⭐ 今日比赛进球如雨，攻势足球让球迷大饱眼福！")
+        elif len(close_games) > len(big_wins):
+            analysis_points.append("⭐ 今日比赛竞争激烈，多场比赛胜负难分！")
+        else:
+            analysis_points.append("⭐ 今日各队发挥稳定，比赛结果符合预期。")
+        
+        return "\n".join(analysis_points)
+        
+    except Exception as e:
+        print(f"❌ 比赛分析失败: {e}")
+        return "比赛分析遇到技术问题，请查看详细比赛结果。"
+
 def generate_football_summary(matches):
     """生成足球比赛摘要"""
     if not matches:
@@ -251,6 +392,17 @@ def generate_football_summary(matches):
             summary_lines.append(f"   {result}")
         
         summary_lines.append("")  # 联赛间空行
+    
+    # 添加AI分析
+    print("🤖 开始AI分析...")
+    ai_analysis = analyze_matches_with_ai(matches)
+    if ai_analysis and "遇到技术问题" not in ai_analysis:
+        summary_lines.append("🤖 **AI分析**:")
+        summary_lines.append("")
+        summary_lines.append(ai_analysis)
+        summary_lines.append("")
+    elif ai_analysis:
+        print(f"ℹ️ {ai_analysis}")
     
     return "\n".join(summary_lines)
 
