@@ -230,9 +230,14 @@ def format_match_result(match):
         return f"⚽ {match.get('league', 'Unknown')}: 解析比赛数据失败 - {e}"
 
 def analyze_matches_with_ai(matches):
-    """使用Gemini AI分析足球比赛结果（无需API key）"""
+    """使用Gemini AI分析足球比赛结果"""
     if not GEMINI_AVAILABLE:
         print("⚠️ Gemini不可用，使用简单分析")
+        return analyze_matches_simple(matches)
+    
+    gemini_api_key = os.getenv('GEMINI_KEY')
+    if not gemini_api_key:
+        print("⚠️ 未设置GEMINI_KEY，使用简单分析")
         return analyze_matches_simple(matches)
     
     if not matches:
@@ -260,8 +265,8 @@ def analyze_matches_with_ai(matches):
 
 请用中文回答，语言风格轻松有趣。"""
 
-        # 使用官方无需API key的方式调用Gemini
-        client = genai.Client()
+        # 使用API key调用Gemini
+        client = genai.Client(api_key=gemini_api_key)
         
         response = client.models.generate_content(
             model="gemini-1.5-flash",

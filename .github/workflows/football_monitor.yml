@@ -47,6 +47,7 @@ jobs:
       - name: Run Football Monitor
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
         run: |
           echo "🕐 当前时间: $(date)"
           echo "⚽ 开始生成欧洲足球比赛日报..."
