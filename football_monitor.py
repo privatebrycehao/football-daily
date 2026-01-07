@@ -215,12 +215,8 @@ def format_match_result(match):
         home_score = home_team.get('score', 0)
         away_score = away_team.get('score', 0)
         
-        # 简化队名（取最后一个单词或前15个字符）
-        home_short = home_name.split()[-1] if ' ' in home_name else home_name[:15]
-        away_short = away_name.split()[-1] if ' ' in away_name else away_name[:15]
-        
-        # 格式化结果
-        result = f"⚽ **{league}**: {away_short} {away_score} - {home_score} {home_short}"
+        # 格式化结果 - 使用完整队名
+        result = f"⚽ **{league}**: {away_name} {away_score} - {home_score} {home_name}"
         
         return result
         
