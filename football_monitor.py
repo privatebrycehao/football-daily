@@ -355,6 +355,20 @@ def get_match_details(event):
                     detail_data = response.json()
                     print(f"   ✅ API端点 {i+1} 成功响应")
                     
+                    # 调试：显示API响应的主要结构
+                    if i == 1:  # 只对API端点2显示调试信息
+                        print(f"   🔍 API端点2数据结构: {list(detail_data.keys())}")
+                        if 'competitions' in detail_data:
+                            competitions = detail_data.get('competitions', [])
+                            if competitions:
+                                print(f"   🔍 competitions结构: {list(competitions[0].keys()) if competitions else 'empty'}")
+                                competitors = competitions[0].get('competitors', []) if competitions else []
+                                if competitors:
+                                    print(f"   🔍 competitor结构: {list(competitors[0].keys()) if competitors else 'empty'}")
+                                    if competitors:
+                                        score_data = competitors[0].get('score', 'no score')
+                                        print(f"   🔍 score数据类型和值: {type(score_data)} = {score_data}")
+                    
                     # 方法1: 从keyEvents获取进球信息
                     keyEvents = detail_data.get('keyEvents', [])
                     if keyEvents:
@@ -387,14 +401,28 @@ def get_match_details(event):
                                 
                                 # 如果有比分但没有详细进球信息，至少记录得分
                                 score = competitor.get('score', 0)
-                                if score and score != '0':
-                                    # 生成模拟的进球信息
-                                    for goal_num in range(int(score)):
-                                        scoring_plays.append({
-                                            'time': f"{15 + goal_num * 20}'",  # 模拟时间
-                                            'player': '球员信息暂缺',
-                                            'team': team_name
-                                        })
+                                
+                                # 处理不同类型的score数据
+                                try:
+                                    if isinstance(score, dict):
+                                        score_value = score.get('value', score.get('displayValue', 0))
+                                    else:
+                                        score_value = score
+                                    
+                                    score_int = int(score_value) if score_value and str(score_value) != '0' else 0
+                                    
+                                    if score_int > 0:
+                                        # 生成模拟的进球信息
+                                        for goal_num in range(score_int):
+                                            scoring_plays.append({
+                                                'time': f"{15 + goal_num * 20}'",  # 模拟时间
+                                                'player': '球员信息暂缺',
+                                                'team': team_name
+                                            })
+                                            print(f"   ⚽ 进球(API2): {15 + goal_num * 20}' 球员信息暂缺 ({team_name})")
+                                except (ValueError, TypeError) as e:
+                                    print(f"   ⚠️ API2处理比分失败: {e}, score类型: {type(score)}, 值: {score}")
+                                    continue
                     
                     if scoring_plays:
                         break  # 如果找到进球信息就停止尝试其他API
@@ -417,7 +445,14 @@ def get_match_details(event):
                     score = competitor.get('score', 0)
                     
                     try:
-                        score_int = int(score)
+                        # 处理不同类型的score数据
+                        if isinstance(score, dict):
+                            # 如果score是字典，尝试获取value字段
+                            score_value = score.get('value', score.get('displayValue', 0))
+                        else:
+                            score_value = score
+                        
+                        score_int = int(score_value) if score_value else 0
                         if score_int > 0:
                             for goal_num in range(score_int):
                                 scoring_plays.append({
@@ -426,7 +461,8 @@ def get_match_details(event):
                                     'team': team_name
                                 })
                                 print(f"   ⚽ 模拟进球: {20 + goal_num * 25}' 详细信息待更新 ({team_name})")
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError) as e:
+                        print(f"   ⚠️ 处理比分数据失败: {e}, score类型: {type(score)}, 值: {score}")
                         pass
         
         print(f"   ✅ 总共找到 {len(scoring_plays)} 个进球")
@@ -572,14 +608,22 @@ def analyze_matches_with_ai(matches):
                     else:
                         # 即使没有详细进球信息，也提供比分分析
                         match_data.append(f"   📊 {home_name} {home_score} - {away_score} {away_name}")
-                        if int(home_score) + int(away_score) > 0:
-                            match_data.append(f"   ⚽ 总进球数: {int(home_score) + int(away_score)} 个")
-                            if int(home_score) > int(away_score):
-                                match_data.append(f"   🏆 获胜方: {home_name} (净胜 {int(home_score) - int(away_score)} 球)")
-                            elif int(away_score) > int(home_score):
-                                match_data.append(f"   🏆 获胜方: {away_name} (净胜 {int(away_score) - int(home_score)} 球)")
-                            else:
-                                match_data.append(f"   🤝 比赛结果: 平局")
+                        # 安全地处理比分数据
+                        try:
+                            home_score_int = int(home_score) if home_score else 0
+                            away_score_int = int(away_score) if away_score else 0
+                            
+                            if home_score_int + away_score_int > 0:
+                                match_data.append(f"   ⚽ 总进球数: {home_score_int + away_score_int} 个")
+                                if home_score_int > away_score_int:
+                                    match_data.append(f"   🏆 获胜方: {home_name} (净胜 {home_score_int - away_score_int} 球)")
+                                elif away_score_int > home_score_int:
+                                    match_data.append(f"   🏆 获胜方: {away_name} (净胜 {away_score_int - home_score_int} 球)")
+                                else:
+                                    match_data.append(f"   🤝 比赛结果: 平局")
+                        except (ValueError, TypeError) as e:
+                            print(f"   ⚠️ 处理比分显示失败: {e}")
+                            match_data.append(f"   📊 比分: {home_score} - {away_score}")
                         match_data.append(f"   ℹ️ 详细进球信息暂时无法获取，请关注后续更新")
                     
                     # 添加积分榜位置信息
@@ -641,8 +685,17 @@ def analyze_matches_with_ai(matches):
                     away_team = competitors[1]
                     home_name = home_team.get('team', {}).get('displayName', '')
                     away_name = away_team.get('team', {}).get('displayName', '')
-                    home_score = int(home_team.get('score', 0))
-                    away_score = int(away_team.get('score', 0))
+                    # 安全地处理比分数据
+                    try:
+                        home_score_raw = home_team.get('score', 0)
+                        away_score_raw = away_team.get('score', 0)
+                        
+                        home_score = int(home_score_raw) if home_score_raw else 0
+                        away_score = int(away_score_raw) if away_score_raw else 0
+                    except (ValueError, TypeError) as e:
+                        print(f"   ⚠️ 处理积分变化比分失败: {e}")
+                        home_score = 0
+                        away_score = 0
                     
                     # 计算积分变化
                     if home_score > away_score:
