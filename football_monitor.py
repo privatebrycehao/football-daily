@@ -194,6 +194,46 @@ def get_football_matches_from_espn():
     
     return all_matches
 
+def get_match_details(event):
+    """获取比赛详细信息，包括进球时间、球员等"""
+    try:
+        match_id = event.get('id')
+        if not match_id:
+            return {}
+            
+        # 尝试获取比赛详细信息
+        detail_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/summary"
+        params = {'event': match_id}
+        
+        response = requests.get(detail_url, headers=headers, params=params, timeout=15)
+        if response.status_code == 200:
+            detail_data = response.json()
+            
+            # 提取进球信息
+            scoring_plays = []
+            keyEvents = detail_data.get('keyEvents', [])
+            
+            for key_event in keyEvents:
+                if key_event.get('type', {}).get('text') == 'Goal':
+                    clock = key_event.get('clock', {}).get('displayValue', '')
+                    player = key_event.get('participant', {}).get('displayName', 'Unknown')
+                    team = key_event.get('team', {}).get('displayName', 'Unknown')
+                    scoring_plays.append({
+                        'time': clock,
+                        'player': player,
+                        'team': team
+                    })
+            
+            return {
+                'scoring_plays': scoring_plays,
+                'detailed_stats': detail_data.get('boxscore', {}),
+                'match_commentary': detail_data.get('commentary', [])
+            }
+    except Exception as e:
+        print(f"❌ 获取比赛详情失败: {e}")
+    
+    return {}
+
 def format_match_result(match):
     """格式化单场比赛结果"""
     try:
@@ -221,8 +261,18 @@ def format_match_result(match):
         home_score = home_team.get('score', 0)
         away_score = away_team.get('score', 0)
         
+        # 获取比赛详细信息
+        match_details = get_match_details(event)
+        
         # 格式化结果 - 使用完整队名
         result = f"⚽ **{league}**: {away_name} {away_score} - {home_score} {home_name}"
+        
+        # 添加进球详情
+        scoring_plays = match_details.get('scoring_plays', [])
+        if scoring_plays:
+            result += "\n   📊 进球详情:"
+            for goal in scoring_plays:
+                result += f"\n      {goal['time']}' {goal['player']} ({goal['team']})"
         
         return result
         
@@ -244,26 +294,72 @@ def analyze_matches_with_ai(matches):
         return "没有比赛数据可供分析"
     
     try:
-        # 准备比赛数据给AI分析
+        # 准备详细的比赛数据给AI分析
         match_data = []
         for match in matches:
-            result = format_match_result(match)
-            match_data.append(result)
+            # 基本比赛信息
+            basic_result = format_match_result(match)
+            match_data.append(basic_result)
+            
+            # 添加更多详细信息
+            event = match['event']
+            match_details = get_match_details(event)
+            
+            # 添加比赛统计信息
+            competitions = event.get('competitions', [{}])
+            if competitions:
+                competition = competitions[0]
+                competitors = competition.get('competitors', [])
+                
+                if len(competitors) >= 2:
+                    home_team = competitors[0]
+                    away_team = competitors[1]
+                    
+                    # 添加球队统计
+                    home_stats = home_team.get('statistics', [])
+                    away_stats = away_team.get('statistics', [])
+                    
+                    if home_stats or away_stats:
+                        match_data.append("   📈 比赛统计:")
+                        for stat in home_stats[:5]:  # 只取前5个重要统计
+                            stat_name = stat.get('name', '')
+                            stat_value = stat.get('displayValue', '')
+                            if stat_name and stat_value:
+                                match_data.append(f"      {home_team.get('team', {}).get('displayName', '')}: {stat_name} {stat_value}")
         
         matches_text = "\n".join(match_data)
         
         # 构建AI分析提示
-        prompt = f"""请分析以下足球比赛结果，提供简洁的分析（不超过200字）：
+        prompt = f"""请详细分析以下足球比赛结果，为每场比赛生成专业的比赛报告：
 
 {matches_text}
 
-请从以下角度分析：
-1. 今日比赛的亮点和意外结果
-2. 强队表现如何
-3. 有趣的比分或对阵
-4. 简要总结今日足球的看点
+请提供以下内容：
 
-请用中文回答，语言风格轻松有趣。"""
+1. **整体赛况总结**：
+   - 今日比赛的整体特点和亮点
+   - 意外结果和惊喜表现
+   - 各联赛的竞争态势
+
+2. **每场比赛详细分析**：
+   为每场比赛提供：
+   - 比赛过程分析（攻防表现、关键时刻）
+   - 球队战术和阵容分析
+   - 关键球员表现评价
+   - 比赛转折点和精彩瞬间
+   - 对两队后续比赛的影响
+
+3. **联赛积分榜影响**：
+   - 分析各场比赛对联赛积分榜的影响
+   - 争冠、欧战资格、保级形势的变化
+   - 重要的排名变动
+
+4. **技术统计分析**：
+   - 进球时间分布
+   - 攻防数据对比
+   - 关键数据解读
+
+请用专业且生动的中文撰写，每场比赛的分析要详细深入，总字数不限。"""
 
         # 使用API key调用Gemini
         client = genai.Client(api_key=gemini_api_key)
