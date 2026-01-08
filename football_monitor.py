@@ -490,6 +490,11 @@ def get_match_details(event):
                                 print(f"   ⚽ 模拟进球: {20 + goal_num * 25}' 详细信息待更新 ({team_name})")
                         else:
                             print(f"   ℹ️ {team_name} 进球数: 0")
+                            
+                    except (ValueError, TypeError) as e:
+                        print(f"   ⚠️ 处理 {team_name} 比分数据失败: {e}")
+                        print(f"   📊 原始数据: score={score}, type={type(score)}")
+                        pass
                 
                 # 如果还是没有进球信息，尝试从比赛名称推断比分
                 if not scoring_plays:
@@ -534,11 +539,6 @@ def get_match_details(event):
                             print(f"   ⚠️ 无法解析比分: {away_score_str}-{home_score_str}")
                     else:
                         print(f"   ⚠️ 比赛名称中未找到比分信息")
-                            
-                    except (ValueError, TypeError) as e:
-                        print(f"   ⚠️ 处理 {team_name} 比分数据失败: {e}")
-                        print(f"   📊 原始数据: score={score}, type={type(score)}")
-                        pass
         
         print(f"   ✅ 总共找到 {len(scoring_plays)} 个进球")
         
