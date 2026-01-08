@@ -341,7 +341,8 @@ def get_match_details(event):
         api_endpoints = [
             f"https://site.api.espn.com/apis/site/v2/sports/soccer/summary?event={match_id}",
             f"https://sports.core.api.espn.com/v2/sports/soccer/leagues/eng.1/events/{match_id}",
-            f"https://site.api.espn.com/apis/site/v2/sports/soccer/match?event={match_id}"
+            f"https://site.api.espn.com/apis/site/v2/sports/soccer/match?event={match_id}",
+            f"https://site.api.espn.com/apis/site/v2/sports/soccer/scoreboard?event={match_id}"
         ]
         
         scoring_plays = []
@@ -368,6 +369,11 @@ def get_match_details(event):
                                     if competitors:
                                         score_data = competitors[0].get('score', 'no score')
                                         print(f"   🔍 score数据类型和值: {type(score_data)} = {score_data}")
+                                        
+                                        # 如果发现是引用链接，直接跳过API2处理
+                                        if isinstance(score_data, dict) and '$ref' in score_data:
+                                            print(f"   ⚠️ API端点2返回引用链接，无法直接获取比分，跳过此API")
+                                            continue
                     
                     # 方法1: 从keyEvents获取进球信息
                     keyEvents = detail_data.get('keyEvents', [])
@@ -404,12 +410,17 @@ def get_match_details(event):
                                 
                                 # 处理不同类型的score数据
                                 try:
+                                    score_int = 0
                                     if isinstance(score, dict):
-                                        score_value = score.get('value', score.get('displayValue', 0))
+                                        # 如果是引用链接，跳过API2的处理
+                                        if '$ref' in score:
+                                            print(f"   ℹ️ API2返回引用链接，跳过详细处理: {score.get('$ref', '')}")
+                                            continue
+                                        else:
+                                            score_value = score.get('value', score.get('displayValue', 0))
+                                            score_int = int(score_value) if score_value and str(score_value) != '0' else 0
                                     else:
-                                        score_value = score
-                                    
-                                    score_int = int(score_value) if score_value and str(score_value) != '0' else 0
+                                        score_int = int(score) if score and str(score) != '0' else 0
                                     
                                     if score_int > 0:
                                         # 生成模拟的进球信息
@@ -440,20 +451,36 @@ def get_match_details(event):
             competitions = event.get('competitions', [])
             if competitions:
                 competitors = competitions[0].get('competitors', [])
-                for competitor in competitors:
+                
+                # 调试：显示基本比赛数据结构
+                print(f"   🔍 基本数据competitors数量: {len(competitors)}")
+                
+                for i, competitor in enumerate(competitors):
                     team_name = competitor.get('team', {}).get('displayName', 'Unknown')
                     score = competitor.get('score', 0)
                     
+                    print(f"   🔍 球队{i+1}: {team_name}, 比分数据: {score} (类型: {type(score)})")
+                    
                     try:
+                        score_int = 0
                         # 处理不同类型的score数据
                         if isinstance(score, dict):
-                            # 如果score是字典，尝试获取value字段
-                            score_value = score.get('value', score.get('displayValue', 0))
+                            # 如果是引用链接，尝试从其他字段获取
+                            if '$ref' in score:
+                                print(f"   ⚠️ {team_name} 的比分是引用链接，无法直接获取")
+                                # 尝试从competitor的其他字段获取比分
+                                winner = competitor.get('winner', False)
+                                if winner:
+                                    print(f"   ℹ️ {team_name} 是获胜方，但无法确定具体比分")
+                                continue
+                            else:
+                                score_value = score.get('value', score.get('displayValue', 0))
+                                score_int = int(score_value) if score_value else 0
                         else:
-                            score_value = score
+                            score_int = int(score) if score and str(score) != '0' else 0
                         
-                        score_int = int(score_value) if score_value else 0
                         if score_int > 0:
+                            print(f"   ✅ {team_name} 进球数: {score_int}")
                             for goal_num in range(score_int):
                                 scoring_plays.append({
                                     'time': f"{20 + goal_num * 25}'",  # 模拟进球时间
@@ -461,8 +488,56 @@ def get_match_details(event):
                                     'team': team_name
                                 })
                                 print(f"   ⚽ 模拟进球: {20 + goal_num * 25}' 详细信息待更新 ({team_name})")
+                        else:
+                            print(f"   ℹ️ {team_name} 进球数: 0")
+                
+                # 如果还是没有进球信息，尝试从比赛名称推断比分
+                if not scoring_plays:
+                    print("   🔄 尝试从比赛名称推断比分...")
+                    event_name = event.get('name', '')
+                    print(f"   📝 比赛名称: {event_name}")
+                    
+                    # 尝试从比赛名称中提取比分（如果包含比分信息）
+                    import re
+                    score_pattern = r'(\d+)-(\d+)'
+                    match = re.search(score_pattern, event_name)
+                    if match:
+                        away_score_str, home_score_str = match.groups()
+                        try:
+                            away_score_int = int(away_score_str)
+                            home_score_int = int(home_score_str)
+                            
+                            # 获取球队名称
+                            if len(competitors) >= 2:
+                                home_team_name = competitors[0].get('team', {}).get('displayName', 'Home Team')
+                                away_team_name = competitors[1].get('team', {}).get('displayName', 'Away Team')
+                                
+                                print(f"   ✅ 从比赛名称提取比分: {away_team_name} {away_score_int} - {home_score_int} {home_team_name}")
+                                
+                                # 生成进球信息
+                                for goal_num in range(home_score_int):
+                                    scoring_plays.append({
+                                        'time': f"{15 + goal_num * 20}'",
+                                        'player': '详细信息待更新',
+                                        'team': home_team_name
+                                    })
+                                    print(f"   ⚽ 推断进球: {15 + goal_num * 20}' 详细信息待更新 ({home_team_name})")
+                                
+                                for goal_num in range(away_score_int):
+                                    scoring_plays.append({
+                                        'time': f"{25 + goal_num * 20}'",
+                                        'player': '详细信息待更新', 
+                                        'team': away_team_name
+                                    })
+                                    print(f"   ⚽ 推断进球: {25 + goal_num * 20}' 详细信息待更新 ({away_team_name})")
+                        except ValueError:
+                            print(f"   ⚠️ 无法解析比分: {away_score_str}-{home_score_str}")
+                    else:
+                        print(f"   ⚠️ 比赛名称中未找到比分信息")
+                            
                     except (ValueError, TypeError) as e:
-                        print(f"   ⚠️ 处理比分数据失败: {e}, score类型: {type(score)}, 值: {score}")
+                        print(f"   ⚠️ 处理 {team_name} 比分数据失败: {e}")
+                        print(f"   📊 原始数据: score={score}, type={type(score)}")
                         pass
         
         print(f"   ✅ 总共找到 {len(scoring_plays)} 个进球")
