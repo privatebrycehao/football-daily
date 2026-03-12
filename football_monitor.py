@@ -1,7 +1,6 @@
 import os
 import requests
-import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 import pytz
 try:
     from google import genai
@@ -22,29 +21,15 @@ headers = {
 
 def get_pacific_time_date():
     """获取美西时间的当前日期"""
-    try:
-        # 美西时区（自动处理夏令时）
-        pacific_tz = pytz.timezone('US/Pacific')
-        utc_now = datetime.now(pytz.UTC)
-        pacific_now = utc_now.astimezone(pacific_tz)
-        
-        print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        print(f"🕐 美西时间: {pacific_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        print(f"🕐 时区偏移: {pacific_now.strftime('%z')}")
-        
-        return pacific_now.date()
-    except ImportError:
-        # 如果pytz不可用，使用简单的时区偏移
-        print("⚠️ pytz不可用，使用简单时区计算")
-        utc_now = datetime.utcnow()
-        # 假设PST (UTC-8)，但实际应该检查夏令时
-        pacific_now = utc_now - timedelta(hours=8)
-        
-        print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S')} UTC")
-        print(f"🕐 美西时间(估算): {pacific_now.strftime('%Y-%m-%d %H:%M:%S')} PST")
-        print("⚠️ 注意：未考虑夏令时，可能有1小时误差")
-        
-        return pacific_now.date()
+    pacific_tz = pytz.timezone('US/Pacific')
+    utc_now = datetime.now(pytz.UTC)
+    pacific_now = utc_now.astimezone(pacific_tz)
+    
+    print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    print(f"🕐 美西时间: {pacific_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    print(f"🕐 时区偏移: {pacific_now.strftime('%z')}")
+    
+    return pacific_now.date()
 
 def detect_webhook_type(webhook_url):
     """检测webhook类型"""
@@ -193,173 +178,6 @@ def get_football_matches_from_espn():
             continue
     
     return all_matches
-
-def get_league_standings(league_id):
-    """获取联赛积分榜信息"""
-    try:
-        # 尝试多个积分榜API端点，包括当前赛季的特定端点
-        current_year = datetime.now().year
-        season_year = current_year if datetime.now().month >= 8 else current_year - 1
-        
-        standings_urls = [
-            # 最新的积分榜API
-            f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_id}/standings",
-            f"https://sports.core.api.espn.com/v2/sports/soccer/leagues/{league_id}/seasons/{season_year}/types/1/standings",
-            f"https://site.api.espn.com/apis/v2/sports/soccer/{league_id}/standings?season={season_year}",
-            # 备用端点
-            f"https://sports.core.api.espn.com/v2/sports/soccer/leagues/{league_id}/standings",
-            f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_id}/scoreboard",
-        ]
-        
-        for i, url in enumerate(standings_urls):
-            try:
-                print(f"   🔄 尝试积分榜API {i+1}: {url}")
-                response = requests.get(url, headers=headers, timeout=15)
-                
-                if response.status_code == 200:
-                    standings_data = response.json()
-                    print(f"   ✅ 积分榜API {i+1} 成功响应")
-                    
-                    # 调试：打印API响应的结构
-                    print(f"   🔍 API响应结构: {list(standings_data.keys())}")
-                    
-                    standings_info = {}
-                    
-                    # 方法1: 标准积分榜结构
-                    children = standings_data.get('children', [])
-                    if children:
-                        print(f"   📊 找到 {len(children)} 个积分榜分组")
-                        for child in children:
-                            standings = child.get('standings', {})
-                            entries = standings.get('entries', []) if isinstance(standings, dict) else []
-                            
-                            for entry in entries:
-                                team = entry.get('team', {})
-                                team_name = team.get('displayName', '')
-                                position = entry.get('position', 0)
-                                
-                                # 获取积分 - 尝试多种方式
-                                points = 0
-                                stats = entry.get('stats', [])
-                                if stats:
-                                    # 通常积分是第一个统计项
-                                    for stat in stats:
-                                        if stat.get('name') == 'points' or stat.get('abbreviation') == 'PTS':
-                                            points = stat.get('value', 0)
-                                            break
-                                    if not points and stats:
-                                        points = stats[0].get('value', 0)  # 备用方案
-                                
-                                if team_name:
-                                    standings_info[team_name] = {
-                                        'position': position,
-                                        'points': points
-                                    }
-                    
-                    # 方法2: 如果没有children，尝试直接从根获取
-                    if not standings_info:
-                        print("   🔄 尝试从根数据获取积分榜...")
-                        standings = standings_data.get('standings', {})
-                        if isinstance(standings, dict):
-                            entries = standings.get('entries', [])
-                        elif isinstance(standings, list):
-                            entries = standings
-                        else:
-                            entries = []
-                        
-                        for entry in entries:
-                            team = entry.get('team', {})
-                            team_name = team.get('displayName', '')
-                            position = entry.get('position', 0)
-                            
-                            points = 0
-                            stats = entry.get('stats', [])
-                            if stats:
-                                for stat in stats:
-                                    if 'point' in stat.get('name', '').lower():
-                                        points = stat.get('value', 0)
-                                        break
-                                if not points and stats:
-                                    points = stats[0].get('value', 0)
-                            
-                            if team_name:
-                                standings_info[team_name] = {
-                                    'position': position,
-                                    'points': points
-                                }
-                    
-                    # 方法3: 从scoreboard API获取当前积分信息
-                    if not standings_info and 'scoreboard' in url:
-                        print("   🔄 从scoreboard获取球队信息...")
-                        events = standings_data.get('events', [])
-                        for event in events:
-                            competitions = event.get('competitions', [])
-                            for comp in competitions:
-                                competitors = comp.get('competitors', [])
-                                for competitor in competitors:
-                                    team = competitor.get('team', {})
-                                    team_name = team.get('displayName', '')
-                                    # 从scoreboard无法获取准确积分，但可以获取球队列表
-                                    if team_name:
-                                        standings_info[team_name] = {
-                                            'position': 0,  # 占位符
-                                            'points': 0     # 占位符
-                                        }
-                    
-                    if standings_info:
-                        print(f"   ✅ 成功获取 {len(standings_info)} 支球队的积分信息")
-                        return standings_info
-                    else:
-                        print(f"   ⚠️ API {i+1} 响应成功但未找到积分榜数据")
-                        
-                else:
-                    print(f"   ❌ 积分榜API {i+1} 响应错误: {response.status_code}")
-                    if response.status_code == 404:
-                        print(f"      可能的原因: 联赛ID {league_id} 不正确或赛季参数有误")
-                    
-            except Exception as e:
-                print(f"   ❌ 积分榜API {i+1} 失败: {e}")
-                continue
-        
-        print("   ⚠️ 所有积分榜API都失败")
-        
-    except Exception as e:
-        print(f"❌ 获取积分榜失败: {e}")
-    
-    return {}
-
-def get_match_details(event):
-    """获取比赛基本信息（简化版）"""
-    # 直接从基本比赛数据获取比分，不调用复杂的API
-    scoring_plays = []
-    competitions = event.get('competitions', [])
-    
-    if competitions:
-        competitors = competitions[0].get('competitors', [])
-        
-        for competitor in competitors:
-            team_name = competitor.get('team', {}).get('displayName', 'Unknown')
-            score = competitor.get('score', 0)
-            
-            try:
-                score_int = int(score) if score and str(score) != '0' else 0
-                
-                if score_int > 0:
-                    # 生成简单的进球占位符
-                    for goal_num in range(score_int):
-                        scoring_plays.append({
-                            'time': f"{15 + goal_num * 20}'",
-                            'player': '球员信息暂缺',
-                            'team': team_name
-                        })
-            except (ValueError, TypeError):
-                pass
-    
-    return {
-        'scoring_plays': scoring_plays,
-        'detailed_stats': {},
-        'match_commentary': []
-    }
 
 def format_match_result(match):
     """格式化单场比赛结果"""
@@ -700,38 +518,6 @@ def generate_football_summary(matches):
     
     return "\n".join(summary_lines)
 
-def send_startup_notification():
-    """发送足球监控启动通知"""
-    webhook_url = os.getenv('DISCORD_WEBHOOK')
-    if not webhook_url:
-        print("警告: 未设置 DISCORD_WEBHOOK 环境变量")
-        return
-    
-    webhook_type = detect_webhook_type(webhook_url)
-    
-    # 创建启动通知消息
-    title = "⚽ 足球监控启动"
-    content = f"欧洲足球比赛监控程序已启动\n开始检查今日足球比赛结果...\n\n⏰ 运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-    
-    if webhook_type == "lark":
-        data = create_lark_message(title, content, "blue")
-    else:
-        data = create_discord_message(title, content, 3447003)
-    
-    try:
-        print(f"📤 正在发送足球监控启动通知...")
-        response = requests.post(webhook_url, json=data, timeout=10)
-        
-        expected_status = 200 if webhook_type == "lark" else 204
-        
-        if response.status_code == expected_status:
-            print("✅ 成功发送启动通知")
-        else:
-            print(f"❌ 启动通知发送失败，状态码: {response.status_code}")
-            print(f"响应内容: {response.text}")
-    except Exception as e:
-        print(f"❌ 发送启动通知时出错: {e}")
-
 def send_football_summary(matches):
     """发送足球比赛摘要到webhook"""
     webhook_url = os.getenv('DISCORD_WEBHOOK')
@@ -771,25 +557,6 @@ def send_football_summary(matches):
 def main():
     """主函数"""
     print("⚽ 欧洲足球比赛监控启动...")
-    
-    # 显示运行环境信息
-    github_event = os.getenv('GITHUB_EVENT_NAME', 'local')
-    print(f"🔧 运行环境: {github_event}")
-    
-    is_manual_run = github_event in ['workflow_dispatch', 'local']
-    
-    if github_event == 'schedule':
-        print("📅 这是自动调度运行 - 跳过启动通知")
-    elif github_event == 'workflow_dispatch':
-        print("🔧 这是手动触发运行 - 发送启动通知")
-    else:
-        print("💻 这是本地运行 - 发送启动通知")
-    
-    # 智能启动通知：只在手动运行时发送
-    if is_manual_run:
-        send_startup_notification()
-    else:
-        print("ℹ️ 自动调度运行，跳过启动通知")
     
     try:
         # 获取足球比赛数据
