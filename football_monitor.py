@@ -376,33 +376,36 @@ def analyze_matches_with_ai(matches, standings_by_league=None, match_details=Non
         
         matches_text = "\n".join(match_data)
         
-        prompt = f"""请分析以下足球比赛结果及联赛形势：
+        prompt = f"""请分析以下足球比赛数据：
+
+积分榜和比赛详细信息如下，所有比分格式为"客队 比分 - 比分 主队"：
 
 {matches_text}
 
 请提供以下内容：
 
-1. **整体赛况总结**：
+1. **整体赛况总结**（1-2段）：
    - 今日比赛的整体特点和亮点
-   - 意外结果和惊喜表现
+   - 意外结果、冷门和惊喜表现
+   - 各联赛的竞争态势概述
 
-2. **比赛结果分析**：
-   - 重点分析关键比赛的进程
-   - 进球分布、红黄牌情况
-   - 哪些结果可能是冷门
+2. **重点比赛复盘**（按联赛，重点分析2-3场关键比赛）：
+   - 根据比赛进程（进球时间线、换人时机等）分析比赛转折点
+   - 根据球队数据（控球率、射门、传球等）分析场面优劣
+   - 根据红黄牌情况分析比赛激烈程度和纪律问题
+   - 结合赛前排名分析结果是否符合预期
 
 3. **联赛形势分析**：
-   - 结合积分榜，分析比赛结果对争冠形势的影响
-   - 欧战资格竞争的变化
-   - 保级形势的变化
+   - 结合积分榜，分析比赛结果对争冠、欧战资格、保级形势的影响
+   - 指出积分榜的关键变化
 
-4. **球队和球员表现**：
-   - 表现亮眼的球队和球员
-   - 状态低迷的球队
-   - 关键球员的贡献
+4. **球队和球员表现点评**（亮点和低谷）：
+   - 表现亮眼的球队和关键球员（进球、助攻等）
+   - 状态低迷的球队，及其问题所在
+   - 红黄牌停赛对后续比赛的影响
 
-请用专业且生动的中文撰写，重点分析比赛进程和联赛格局。"""
-        
+请用专业且生动的中文撰写，基于实际数据深入分析，避免泛泛而谈。每个部分的篇幅要均衡。"""
+
         client = OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com"
@@ -412,7 +415,7 @@ def analyze_matches_with_ai(matches, standings_by_league=None, match_details=Non
             model="deepseek-chat",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=2000,
+            max_tokens=3000,
         )
         
         ai_analysis = response.choices[0].message.content.strip()
@@ -558,7 +561,7 @@ def generate_football_summary(matches, standings_by_league=None):
             summary_lines.append("")
             
             # 收集AI分析数据
-            match_detail_info = _build_match_ai_info(match, summary)
+            match_detail_info = _build_match_ai_info(match, summary, standings_by_league)
             if match_detail_info:
                 match_details_for_ai.append(match_detail_info)
         
@@ -577,50 +580,90 @@ def generate_football_summary(matches, standings_by_league=None):
     
     return "\n".join(summary_lines)
 
-def _build_match_ai_info(match, summary):
+def _build_match_ai_info(match, summary, standings_by_league=None):
     """为AI分析构建单场比赛的详细数据"""
     lines = []
     event = match['event']
     league = match['league']
     result = format_match_result(match)
-    lines.append(result)
+    lines.append(f"**{result}**")
     
     if not summary:
         return "\n".join(lines)
     
-    # 统计信息
+    # 场地和观众
     game_info = summary.get('gameInfo', {})
-    attendance = game_info.get('attendance', 0)
     venue = game_info.get('venue', {}).get('fullName', '')
-    
+    attendance = game_info.get('attendance', 0)
     if venue:
-        lines.append(f"  场地: {venue}")
-    if attendance:
-        lines.append(f"  观众: {attendance:,}")
+        venue_line = f"  📍 场地: {venue}"
+        if attendance:
+            venue_line += f" | 👥 观众: {attendance:,}"
+        lines.append(venue_line)
     
-    # 进球者
+    # 球队统计对比
+    boxscore = summary.get('boxscore', {})
+    teams_stats = boxscore.get('teams', [])
+    if len(teams_stats) >= 2:
+        lines.append("  📊 **球队数据对比**:")
+        stat_keys = ['possessionPct', 'totalShots', 'shotsOnTarget', 'wonCorners', 'foulsCommitted', 'yellowCards', 'redCards', 'offSides', 'saves', 'accuratePasses', 'passPct', 'penaltyKickGoals']
+        stat_labels = {'possessionPct': '控球率%', 'totalShots': '射门', 'shotsOnTarget': '射正', 'wonCorners': '角球', 'foulsCommitted': '犯规', 'yellowCards': '黄牌', 'redCards': '红牌', 'offSides': '越位', 'saves': '扑救', 'accuratePasses': '传球成功', 'passPct': '传球成功率%', 'penaltyKickGoals': '点球'}
+        for key in stat_keys:
+            vals = []
+            for t in teams_stats:
+                stats = {s.get('name', ''): s.get('displayValue', '-') for s in t.get('statistics', [])}
+                team = t.get('team', {}).get('abbreviation', t.get('team', {}).get('displayName', '?'))
+                v = stats.get(key, '-')
+                vals.append(f"{team}: {v}")
+            if any(v.split(': ')[1] not in ('-', '0', '0.0', '0%') for v in vals):
+                lines.append(f"    {stat_labels.get(key, key)} - {' | '.join(vals)}")
+    
+    # 完整事件时间线
     key_events = summary.get('keyEvents', [])
-    goal_events = [ke for ke in key_events if ke.get('type', {}).get('text', '') == 'Goal']
-    if goal_events:
-        scorers = []
-        for ke in goal_events:
+    if key_events:
+        lines.append("  ⏱️ **比赛进程**:")
+        for ke in key_events:
+            event_type = ke.get('type', {}).get('text', '')
+            if not event_type:
+                continue
             clock = ke.get('clock', {}).get('displayValue', '')
-            text = ke.get('shortText', '')
-            scorers.append(f"{clock}' {text}")
-        lines.append(f"  进球: {', '.join(scorers)}")
+            short_text = ke.get('shortText', '')
+            if not short_text:
+                continue
+            emoji_map = {'Goal': '⚽', 'Yellow Card': '🟨', 'Yellow': '🟨', 'Red Card': '🟥', 'Red': '🟥', 'Substitution': '🔃', 'Penalty': '🥅'}
+            emoji = emoji_map.get(event_type, '')
+            if emoji:
+                lines.append(f"    {emoji} {clock}' - {short_text}")
     
-    # 红黄牌统计
-    yellow_count = sum(1 for ke in key_events if ke.get('type', {}).get('text', '') in ('Yellow Card', 'Yellow'))
-    red_count = sum(1 for ke in key_events if ke.get('type', {}).get('text', '') in ('Red Card', 'Red'))
-    if yellow_count > 0 or red_count > 0:
-        discipline = []
-        if yellow_count > 0:
-            discipline.append(f"🟨 {yellow_count}")
-        if red_count > 0:
-            discipline.append(f"🟥 {red_count}")
-        lines.append(f"  纪律: {', '.join(discipline)}")
+    # 球队排名参考（从积分榜中查找）
+    if standings_by_league and league in standings_by_league:
+        comps = event.get('competitions', [{}])
+        if comps:
+            competitors = comps[0].get('competitors', [])
+            entries = standings_by_league[league]
+            team_ranks = []
+            for comp in competitors:
+                team_name = comp.get('team', {}).get('displayName', '')
+                rank = _find_team_rank(entries, team_name)
+                if rank:
+                    team_ranks.append(f"{team_name} (赛前排名第{rank})")
+            if team_ranks:
+                lines.append(f"  赛前排名: {' vs '.join(team_ranks)}")
     
     return "\n".join(lines)
+
+def _find_team_rank(standings_entries, team_name):
+    """在积分榜中查找球队排名"""
+    if not team_name:
+        return None
+    team_lower = team_name.lower()
+    for entry in standings_entries:
+        entry_team = entry.get('team', '').lower()
+        if team_lower == entry_team or team_lower in entry_team or entry_team in team_lower:
+            for s in entry.get('stats', []):
+                if s.get('name') == 'rank':
+                    return s.get('displayValue')
+    return None
 
 def send_football_summary(matches, standings_by_league=None):
     """发送足球比赛摘要到webhook"""
