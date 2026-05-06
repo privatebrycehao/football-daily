@@ -292,19 +292,17 @@ def format_standings(entries, league_name, top_n=8):
     return "\n".join(lines)
 
 def build_match_detail_text(match, summary):
-    """构建单场比赛的详细文本"""
+    """构建单场比赛的显示文本（仅比分和场地信息）"""
     lines = []
     event = match['event']
     league = match['league']
     
-    # 比赛结果行
     result = format_match_result(match)
     lines.append(result)
     
     if not summary:
         return "\n".join(lines)
     
-    # venue
     venue = summary.get('gameInfo', {}).get('venue', {}).get('fullName', '')
     attendance = summary.get('gameInfo', {}).get('attendance', 0)
     if venue:
@@ -312,11 +310,6 @@ def build_match_detail_text(match, summary):
         if attendance:
             info_line += f" | 👥 {attendance:,}"
         lines.append(info_line)
-    
-    # 关键事件
-    events = extract_key_events_from_summary(summary)
-    if events:
-        lines.extend(events)
     
     return "\n".join(lines)
 
