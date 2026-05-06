@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests pytz openai ruff
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Syntax check
+        run: |
+          python -m py_compile football_monitor.py
+          python -m py_compile lib/ai.py
+          python -m py_compile lib/display.py
+          python -m py_compile lib/espn.py
+          python -m py_compile lib/webhook.py
+
+      - name: Import check
+        run: python -c "from lib.espn import get_football_matches_from_espn; from lib.display import format_match_result; from lib.ai import analyze_matches_with_ai; from lib.webhook import detect_webhook_type; print('All imports OK')"

@@ -88,7 +88,7 @@ def send_football_summary(matches, standings_by_league=None):
         data = create_discord_message(title, content, 3447003)
 
     try:
-        print(f"📤 正在发送足球比赛摘要...")
+        print("📤 正在发送足球比赛摘要...")
         response = requests.post(webhook_url, json=data, timeout=10)
 
         expected_status = 200 if webhook_type == "lark" else 204
@@ -132,7 +132,7 @@ def main():
             try:
                 requests.post(webhook_url, json=data, timeout=10)
                 print("✅ 已发送错误通知")
-            except:
+            except Exception:
                 print("❌ 发送错误通知失败")
 
 

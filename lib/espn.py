@@ -44,7 +44,7 @@ def get_football_matches_from_espn():
     ]
 
     print(f"📅 将检查以下美西时间日期: {[d.strftime('%Y-%m-%d') for d in check_dates]}")
-    print(f"💡 注意：欧洲比赛时间可能跨越多个美西日期")
+    print("💡 注意：欧洲比赛时间可能跨越多个美西日期")
 
     all_matches = []
     all_standings = {}
@@ -113,7 +113,7 @@ def get_football_matches_from_espn():
                     all_matches.extend(completed_matches)
                     league_matches_found += len(completed_matches)
                 else:
-                    print(f"    ⚪ 没有找到已完成的比赛")
+                    print("    ⚪ 没有找到已完成的比赛")
 
             print(f"  🎯 {league_name} 总计找到: {league_matches_found} 场比赛")
 
