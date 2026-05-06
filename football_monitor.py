@@ -218,7 +218,7 @@ def format_match_result(match):
         away_score = away_team.get('score', 0)
         
         # 格式化结果 - 使用完整队名和比分
-        result = f"{away_name} {away_score} - {home_score} {home_name}"
+        result = f"**{home_name}** {home_score} - {away_score} {away_name}"
         
         return result
         
