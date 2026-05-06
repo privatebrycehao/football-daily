@@ -42,12 +42,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests pytz google-genai
+          pip install requests pytz openai
 
       - name: Run Football Monitor
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+          DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_KEY }}
         run: |
           echo "🕐 当前时间: $(date)"
           echo "⚽ 开始生成欧洲足球比赛日报..."

@@ -2,12 +2,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 import pytz
-try:
-    from google import genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
-    print("⚠️ Google GenAI not available, will use simple analysis")
+from openai import OpenAI
 
 # 设置请求头，避免被识别为爬虫
 headers = {
@@ -215,14 +210,10 @@ def format_match_result(match):
         return f"⚽ {match.get('league', 'Unknown')}: 解析比赛数据失败 - {e}"
 
 def analyze_matches_with_ai(matches):
-    """使用Gemini AI分析足球比赛结果"""
-    if not GEMINI_AVAILABLE:
-        print("⚠️ Gemini不可用，使用简单分析")
-        return analyze_matches_simple(matches)
-    
-    gemini_api_key = os.getenv('GEMINI_KEY')
-    if not gemini_api_key:
-        print("⚠️ 未设置GEMINI_KEY，使用简单分析")
+    """使用DeepSeek AI分析足球比赛结果"""
+    api_key = os.getenv('DEEPSEEK_KEY')
+    if not api_key:
+        print("⚠️ 未设置DEEPSEEK_KEY，使用简单分析")
         return analyze_matches_simple(matches)
     
     if not matches:
@@ -349,38 +340,19 @@ def analyze_matches_with_ai(matches):
 
 请用专业且生动的中文撰写，重点关注比分和结果分析。"""
 
-        # 使用API key调用Gemini
-        client = genai.Client(api_key=gemini_api_key)
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com"
+        )
         
-        # 尝试不同的模型名称（优先使用免费的）
-        models_to_try = [
-            "gemini-3-flash-preview",  # 免费额度
-            "models/gemini-3-flash-preview",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash",
-            "gemini-pro",
-            "models/gemini-1.5-flash-latest",
-            "models/gemini-pro"
-        ]
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=2000,
+        )
         
-        response = None
-        for model_name in models_to_try:
-            try:
-                print(f"🔄 尝试模型: {model_name}")
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                )
-                print(f"✅ 模型 {model_name} 成功")
-                break
-            except Exception as model_error:
-                print(f"❌ 模型 {model_name} 失败: {model_error}")
-                continue
-        
-        if not response:
-            raise Exception("所有模型都不可用")
-        
-        ai_analysis = response.text.strip()
+        ai_analysis = response.choices[0].message.content.strip()
         print("✅ AI分析完成")
         return ai_analysis
         
