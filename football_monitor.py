@@ -195,18 +195,17 @@ def format_match_result(match):
     """格式化单场比赛结果"""
     try:
         event = match['event']
-        league = match['league']
         
         # 获取比赛信息
         competitions = event.get('competitions', [{}])
         if not competitions:
-            return f"⚽ {league}: 比赛信息不完整"
+            return "比赛信息不完整"
         
         competition = competitions[0]
         competitors = competition.get('competitors', [])
         
         if len(competitors) < 2:
-            return f"⚽ {league}: 队伍信息不完整"
+            return "队伍信息不完整"
         
         # 通常home是第一个，away是第二个
         home_team = competitors[0]
@@ -219,12 +218,12 @@ def format_match_result(match):
         away_score = away_team.get('score', 0)
         
         # 格式化结果 - 使用完整队名和比分
-        result = f"⚽ **{league}**: {away_name} {away_score} - {home_score} {home_name}"
+        result = f"{away_name} {away_score} - {home_score} {home_name}"
         
         return result
         
     except Exception as e:
-        return f"⚽ {match.get('league', 'Unknown')}: 解析比赛数据失败 - {e}"
+        return f"解析比赛数据失败 - {e}"
 
 def get_match_summary(event_id, league_id):
     """获取单场比赛的详细摘要"""
@@ -292,26 +291,8 @@ def format_standings(entries, league_name, top_n=8):
     return "\n".join(lines)
 
 def build_match_detail_text(match, summary):
-    """构建单场比赛的显示文本（仅比分和场地信息）"""
-    lines = []
-    event = match['event']
-    league = match['league']
-    
-    result = format_match_result(match)
-    lines.append(result)
-    
-    if not summary:
-        return "\n".join(lines)
-    
-    venue = summary.get('gameInfo', {}).get('venue', {}).get('fullName', '')
-    attendance = summary.get('gameInfo', {}).get('attendance', 0)
-    if venue:
-        info_line = f"  📍 {venue}"
-        if attendance:
-            info_line += f" | 👥 {attendance:,}"
-        lines.append(info_line)
-    
-    return "\n".join(lines)
+    """构建单场比赛的显示文本（仅比分）"""
+    return format_match_result(match)
 
 def analyze_matches_with_ai(matches, standings_by_league=None, match_details=None):
     """使用DeepSeek AI分析足球比赛结果"""
