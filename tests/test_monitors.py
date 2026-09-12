@@ -5,7 +5,6 @@ import unittest
 from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
-import football_monitor
 import nba
 from lib import espn
 from lib.display import format_match_result, format_standings
@@ -196,13 +195,6 @@ class FootballDataTests(unittest.TestCase):
     def test_raises_when_every_football_request_fails(self, _get, _date):
         with self.assertRaisesRegex(RuntimeError, "全部失败"):
             espn.get_football_matches_from_espn()
-
-    @patch("football_monitor.get_football_matches_from_espn")
-    @patch("football_monitor.send_test_message")
-    def test_test_mode_does_not_call_espn(self, send_test, get_matches):
-        football_monitor.main(test_mode=True)
-        send_test.assert_called_once_with()
-        get_matches.assert_not_called()
 
 
 if __name__ == "__main__":

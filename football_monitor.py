@@ -1,5 +1,4 @@
 import os
-import sys
 from datetime import datetime, timezone
 
 from lib.ai import analyze_matches_with_ai, build_match_ai_info
@@ -96,25 +95,8 @@ def send_football_summary(matches, standings_by_league=None):
     print("✅ 成功发送足球比赛摘要")
 
 
-def send_test_message():
-    webhook_url = os.getenv('DISCORD_WEBHOOK')
-    if not webhook_url:
-        raise RuntimeError("未设置 DISCORD_WEBHOOK 环境变量")
-    webhook_type = detect_webhook_type(webhook_url)
-    title = "足球日报 Webhook 测试"
-    content = "固定测试消息：测试模式未访问 ESPN 或 AI 服务。"
-    payloads = (create_lark_messages(title, content, "blue") if webhook_type == "lark"
-                else create_discord_messages(title, content, 3447003))
-    send_webhook(webhook_url, webhook_type, payloads)
-
-
-def main(test_mode=False):
+def main():
     print("⚽ 欧洲足球比赛监控启动...")
-    if test_mode:
-        send_test_message()
-        print("✅ 足球 Webhook 测试完成")
-        return
-
     try:
         matches, standings = get_football_matches_from_espn()
         print(f"📊 总共找到 {len(matches)} 场最近24小时已完成的比赛")
@@ -127,4 +109,4 @@ def main(test_mode=False):
 
 
 if __name__ == "__main__":
-    main(test_mode=len(sys.argv) > 1 and sys.argv[1] == "test")
+    main()
