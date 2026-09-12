@@ -8,15 +8,6 @@ on:
     # 使用冬季时间UTC 23:00，每天运行
     - cron: '0 23 * * *'
   workflow_dispatch: # 允许手动运行
-    inputs:
-      test_mode:
-        description: '选择运行模式'
-        required: false
-        default: 'full'
-        type: choice
-        options:
-        - full
-        - test
 
 jobs:
   football_summary:
@@ -54,12 +45,8 @@ jobs:
           
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "📅 自动调度运行 - 生成足球日报"
-            python football_monitor.py
-          elif [ "${{ github.event.inputs.test_mode }}" = "test" ]; then
-            echo "🧪 手动测试模式（不访问 ESPN/AI）"
-            python football_monitor.py test
           else
-            echo "🔧 手动完整模式"
-            python football_monitor.py
+            echo "🔧 手动运行 - 生成足球日报"
           fi
+          python football_monitor.py
           echo "✅ 足球监控完成"
