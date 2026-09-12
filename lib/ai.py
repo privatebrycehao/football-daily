@@ -1,6 +1,6 @@
 import os
-from openai import OpenAI
-from .display import format_match_result
+
+from .display import format_match_result, get_home_away_competitors
 
 
 def analyze_matches_with_ai(matches, standings_by_league=None, match_details=None):
@@ -43,10 +43,10 @@ def analyze_matches_with_ai(matches, standings_by_league=None, match_details=Non
                 event = match['event']
                 competitions = event.get('competitions', [{}])
                 if competitions:
-                    competitors = competitions[0].get('competitors', [])
-                    if len(competitors) >= 2:
-                        home_score = int(competitors[0].get('score', 0) or 0)
-                        away_score = int(competitors[1].get('score', 0) or 0)
+                    home_team, away_team = get_home_away_competitors(event)
+                    if home_team and away_team:
+                        home_score = int(home_team.get('score', 0) or 0)
+                        away_score = int(away_team.get('score', 0) or 0)
                         total = home_score + away_score
                         diff = abs(home_score - away_score)
                         if total >= 5:
@@ -58,7 +58,7 @@ def analyze_matches_with_ai(matches, standings_by_league=None, match_details=Non
 
         prompt = f"""请分析以下足球比赛数据：
 
-积分榜和比赛详细信息如下，所有比分格式为"客队 比分 - 比分 主队"：
+积分榜和比赛详细信息如下，所有比分均明确标注主队和客队，格式为"主队 比分 - 比分 客队"：
 
 {matches_text}
 
@@ -86,6 +86,8 @@ def analyze_matches_with_ai(matches, standings_by_league=None, match_details=Non
 
 请用专业且生动的中文撰写，基于实际数据深入分析，避免泛泛而谈。每个部分的篇幅要均衡。"""
 
+        from openai import OpenAI
+
         client = OpenAI(
             api_key=api_key,
             base_url="https://api.deepseek.com"
@@ -102,7 +104,7 @@ def analyze_matches_with_ai(matches, standings_by_league=None, match_details=Non
         print("✅ AI分析完成")
         return ai_analysis
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"❌ AI分析失败: {e}")
         print("🔄 回退到简单分析")
         return analyze_matches_simple(matches)
@@ -128,24 +130,25 @@ def analyze_matches_simple(matches):
             event = match['event']
             competitions = event.get('competitions', [{}])
             if competitions:
-                competitors = competitions[0].get('competitors', [])
-                if len(competitors) >= 2:
-                    home_score = int(competitors[0].get('score', 0))
-                    away_score = int(competitors[1].get('score', 0))
+                home_team, away_team = get_home_away_competitors(event)
+                if home_team and away_team:
+                    home_score = int(home_team.get('score', 0) or 0)
+                    away_score = int(away_team.get('score', 0) or 0)
                     total_goals = home_score + away_score
                     score_diff = abs(home_score - away_score)
 
-                    home_name = competitors[0].get('team', {}).get('displayName', 'Unknown')
-                    away_name = competitors[1].get('team', {}).get('displayName', 'Unknown')
+                    home_name = home_team.get('team', {}).get('displayName', 'Unknown')
+                    away_name = away_team.get('team', {}).get('displayName', 'Unknown')
+                    score_text = f"主队 {home_name} {home_score}-{away_score} {away_name} 客队"
 
                     if total_goals >= 5:
-                        high_scoring_games.append(f"{away_name} {away_score}-{home_score} {home_name}")
+                        high_scoring_games.append(score_text)
 
                     if score_diff >= 3:
-                        big_wins.append(f"{away_name} {away_score}-{home_score} {home_name}")
+                        big_wins.append(score_text)
 
                     if score_diff == 1:
-                        close_games.append(f"{away_name} {away_score}-{home_score} {home_name}")
+                        close_games.append(score_text)
 
         analysis_points.append(f"📊 今日共有 {total_matches} 场精彩比赛结束")
 
@@ -179,7 +182,7 @@ def analyze_matches_simple(matches):
 
         return "\n".join(analysis_points)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"❌ 比赛分析失败: {e}")
         return "比赛分析遇到技术问题，请查看详细比赛结果。"
 

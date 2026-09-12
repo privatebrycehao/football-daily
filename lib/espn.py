@@ -1,7 +1,9 @@
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from zoneinfo import ZoneInfo
+
 import requests
-import pytz
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -23,9 +25,8 @@ LEAGUES = {
 
 
 def get_pacific_time_date():
-    pacific_tz = pytz.timezone('US/Pacific')
-    utc_now = datetime.now(pytz.UTC)
-    pacific_now = utc_now.astimezone(pacific_tz)
+    utc_now = datetime.now(timezone.utc)
+    pacific_now = utc_now.astimezone(ZoneInfo('America/Los_Angeles'))
     print(f"🕐 UTC时间: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print(f"🕐 美西时间: {pacific_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print(f"🕐 时区偏移: {pacific_now.strftime('%z')}")
@@ -48,6 +49,7 @@ def get_football_matches_from_espn():
 
     all_matches = []
     all_standings = {}
+    successful_requests = 0
 
     for league_name, league_id in LEAGUES.items():
         print(f"\n🏆 检查联赛: {league_name}")
@@ -68,6 +70,7 @@ def get_football_matches_from_espn():
                     continue
 
                 data = response.json()
+                successful_requests += 1
                 events = data.get('events', [])
 
                 print(f"    📊 API返回 {len(events)} 个事件")
@@ -117,14 +120,36 @@ def get_football_matches_from_espn():
 
             print(f"  🎯 {league_name} 总计找到: {league_matches_found} 场比赛")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"  ❌ 获取 {league_name} 数据失败: {e}")
             print(f"  📝 详细错误: {traceback.format_exc()}")
             continue
 
-    return all_matches, all_standings
+    if successful_requests == 0:
+        raise RuntimeError("ESPN 足球数据请求全部失败")
+
+    now_utc = datetime.now(timezone.utc)
+    window_start = now_utc - timedelta(hours=24)
+    recent_matches = {}
+    for match in all_matches:
+        event = match['event']
+        event_id = event.get('id')
+        event_date = event.get('date')
+        if not event_id or not event_date:
+            continue
+        try:
+            event_time = datetime.fromisoformat(event_date.replace('Z', '+00:00')).astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            print(f"  ⚠️ 跳过时间无效的事件: {event_id}")
+            continue
+        if window_start <= event_time <= now_utc:
+            recent_matches[event_id] = match
+
+    print(f"🕐 日报窗口: {window_start.isoformat()} 至 {now_utc.isoformat()}，去重后 {len(recent_matches)} 场")
+    return list(recent_matches.values()), all_standings
 
 
+@lru_cache(maxsize=128)
 def get_match_summary(event_id, league_id):
     try:
         summary_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_id}/summary?event={event_id}"
@@ -133,7 +158,7 @@ def get_match_summary(event_id, league_id):
             print(f"    Summary API错误: {response.status_code}")
             return None
         return response.json()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"    获取摘要失败: {e}")
         return None
 

@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests pytz openai
+          pip install -r requirements.txt
 
       - name: Run Football Monitor
         env:
@@ -52,14 +52,14 @@ jobs:
           echo "🕐 当前时间: $(date)"
           echo "⚽ 开始生成欧洲足球比赛日报..."
           
-          # 检查是否为自动调度运行
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "📅 自动调度运行 - 生成足球日报"
+            python football_monitor.py
           elif [ "${{ github.event.inputs.test_mode }}" = "test" ]; then
-            echo "🧪 手动测试模式"
+            echo "🧪 手动测试模式（不访问 ESPN/AI）"
+            python football_monitor.py test
           else
             echo "🔧 手动完整模式"
+            python football_monitor.py
           fi
-          
-          python football_monitor.py
           echo "✅ 足球监控完成"

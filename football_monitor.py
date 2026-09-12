@@ -1,11 +1,16 @@
 import os
-import requests
-from datetime import datetime
+import sys
+from datetime import datetime, timezone
 
-from lib.espn import get_football_matches_from_espn, get_match_summary
-from lib.display import format_standings, build_match_detail_text
 from lib.ai import analyze_matches_with_ai, build_match_ai_info
-from lib.webhook import detect_webhook_type, create_lark_message, create_discord_message
+from lib.display import build_match_detail_text, format_standings
+from lib.espn import get_football_matches_from_espn, get_match_summary
+from lib.webhook import (
+    create_discord_messages,
+    create_lark_messages,
+    detect_webhook_type,
+    send_webhook,
+)
 
 
 def generate_football_summary(matches, standings_by_league=None):
@@ -45,7 +50,7 @@ def generate_football_summary(matches, standings_by_league=None):
             if event_id and league_id:
                 summary = get_match_summary(event_id, league_id)
 
-            detail_text = build_match_detail_text(match, summary)
+            detail_text = build_match_detail_text(match)
             summary_lines.append(f"   {detail_text}")
             summary_lines.append("")
 
@@ -71,8 +76,7 @@ def generate_football_summary(matches, standings_by_league=None):
 def send_football_summary(matches, standings_by_league=None):
     webhook_url = os.getenv('DISCORD_WEBHOOK')
     if not webhook_url:
-        print("警告: 未设置 DISCORD_WEBHOOK 环境变量")
-        return
+        raise RuntimeError("未设置 DISCORD_WEBHOOK 环境变量")
 
     webhook_type = detect_webhook_type(webhook_url)
     print(f"🔍 检测到webhook类型: {webhook_type}")
@@ -80,61 +84,47 @@ def send_football_summary(matches, standings_by_league=None):
     summary = generate_football_summary(matches, standings_by_league)
 
     title = "⚽ 欧洲足球比赛日报"
-    content = f"{summary}\n\n⏰ 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    content = f"{summary}\n\n⏰ 生成时间: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC"
 
     if webhook_type == "lark":
-        data = create_lark_message(title, content, "blue")
+        payloads = create_lark_messages(title, content, "blue")
     else:
-        data = create_discord_message(title, content, 3447003)
+        payloads = create_discord_messages(title, content, 3447003)
 
-    try:
-        print("📤 正在发送足球比赛摘要...")
-        response = requests.post(webhook_url, json=data, timeout=10)
-
-        expected_status = 200 if webhook_type == "lark" else 204
-
-        if response.status_code == expected_status:
-            print("✅ 成功发送足球比赛摘要")
-        else:
-            print(f"❌ 发送失败，状态码: {response.status_code}")
-            print(f"响应内容: {response.text}")
-    except Exception as e:
-        print(f"❌ 发送webhook时出错: {e}")
+    print(f"📤 正在发送足球比赛摘要（{len(payloads)} 条）...")
+    send_webhook(webhook_url, webhook_type, payloads)
+    print("✅ 成功发送足球比赛摘要")
 
 
-def main():
+def send_test_message():
+    webhook_url = os.getenv('DISCORD_WEBHOOK')
+    if not webhook_url:
+        raise RuntimeError("未设置 DISCORD_WEBHOOK 环境变量")
+    webhook_type = detect_webhook_type(webhook_url)
+    title = "足球日报 Webhook 测试"
+    content = "固定测试消息：测试模式未访问 ESPN 或 AI 服务。"
+    payloads = (create_lark_messages(title, content, "blue") if webhook_type == "lark"
+                else create_discord_messages(title, content, 3447003))
+    send_webhook(webhook_url, webhook_type, payloads)
+
+
+def main(test_mode=False):
     print("⚽ 欧洲足球比赛监控启动...")
+    if test_mode:
+        send_test_message()
+        print("✅ 足球 Webhook 测试完成")
+        return
 
     try:
         matches, standings = get_football_matches_from_espn()
-
-        print(f"📊 总共找到 {len(matches)} 场已完成的比赛")
+        print(f"📊 总共找到 {len(matches)} 场最近24小时已完成的比赛")
         print(f"📊 获取到 {len(standings)} 个联赛的积分榜")
-
         send_football_summary(matches, standings)
-
         print("✅ 足球监控完成")
-
-    except Exception as e:
-        print(f"❌ 足球监控出错: {e}")
-
-        webhook_url = os.getenv('DISCORD_WEBHOOK')
-        if webhook_url:
-            webhook_type = detect_webhook_type(webhook_url)
-
-            error_content = f"足球比赛监控程序遇到错误\n\n错误详情: {str(e)}\n\n⏰ 错误时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-
-            if webhook_type == "lark":
-                data = create_lark_message("⚠️ 足球监控错误", error_content, "red")
-            else:
-                data = create_discord_message("足球监控错误", error_content, 15158332)
-
-            try:
-                requests.post(webhook_url, json=data, timeout=10)
-                print("✅ 已发送错误通知")
-            except Exception:
-                print("❌ 发送错误通知失败")
+    except Exception as exc:
+        print(f"❌ 足球监控出错: {type(exc).__name__}: {exc}")
+        raise
 
 
 if __name__ == "__main__":
-    main()
+    main(test_mode=len(sys.argv) > 1 and sys.argv[1] == "test")
