@@ -5,15 +5,6 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Connection': 'keep-alive',
-    'Referer': 'https://www.espn.com/'
-}
-
 LEAGUES = {
     "UEFA Champions League": "uefa.champions",
     "UEFA Europa League": "uefa.europa",
@@ -64,7 +55,7 @@ def get_football_matches_from_espn():
                 print(f"  📅 检查日期: {date_str} ({check_date.strftime('%Y-%m-%d')})")
                 print(f"  🔗 API URL: {espn_url}")
 
-                response = requests.get(espn_url, timeout=30, headers=headers)
+                response = requests.get(espn_url, timeout=30)
                 if response.status_code != 200:
                     print(f"    ❌ ESPN API响应错误: {response.status_code}")
                     continue
@@ -153,7 +144,7 @@ def get_football_matches_from_espn():
 def get_match_summary(event_id, league_id):
     try:
         summary_url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league_id}/summary?event={event_id}"
-        response = requests.get(summary_url, timeout=30, headers=headers)
+        response = requests.get(summary_url, timeout=30)
         if response.status_code != 200:
             print(f"    Summary API错误: {response.status_code}")
             return None
