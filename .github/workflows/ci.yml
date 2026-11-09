@@ -26,7 +26,7 @@ jobs:
 
       - name: Syntax check
         run: |
-          python -m py_compile football_monitor.py nba.py
+          python -m py_compile football_monitor.py
           python -m py_compile lib/ai.py
           python -m py_compile lib/display.py
           python -m py_compile lib/espn.py

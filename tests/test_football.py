@@ -1,11 +1,7 @@
-import json
-import os
-import tempfile
 import unittest
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import Mock, patch
 
-import nba
 from lib import espn
 from lib.display import format_match_result, format_standings
 from lib.webhook import (
@@ -106,54 +102,6 @@ class DisplayTests(unittest.TestCase):
         text = format_standings(entries, "联赛")
         self.assertIn("- **1. 中文 Team**｜19 分", text)
         self.assertNotIn("```", text)
-
-
-class NBADataTests(unittest.TestCase):
-    @patch("nba.get_pacific_time_date", return_value=date(2026, 1, 10))
-    @patch("nba.requests.get")
-    def test_queries_two_days_filters_status_and_deduplicates_events(self, get, _today):
-        final = {"id": "same", "status": {"type": {"name": "STATUS_FINAL"}}}
-        scheduled = {"id": "future", "status": {"type": {"name": "STATUS_SCHEDULED"}}}
-        in_progress = {"id": "live", "status": {"type": {"name": "STATUS_IN_PROGRESS"}}}
-        responses = []
-        for events in ([final, scheduled], [final, in_progress]):
-            response = Mock(status_code=200)
-            response.json.return_value = {"events": events}
-            responses.append(response)
-        get.side_effect = responses
-
-        games, source = nba.get_games_from_espn()
-
-        self.assertEqual(source, "espn")
-        self.assertEqual({game["id"] for game in games}, {"same", "live"})
-        self.assertEqual(get.call_count, 2)
-        self.assertIn("dates=20260110", get.call_args_list[0].args[0])
-        self.assertIn("dates=20260109", get.call_args_list[1].args[0])
-
-    def test_alert_identity_and_state_are_stable(self):
-        by_id = {"game_id": "game-1", "id": "player-1", "team": "A", "name": "Name"}
-        renamed = {**by_id, "name": "Other Name", "points": 55}
-        self.assertEqual(nba.alert_identity(by_id), nba.alert_identity(renamed))
-        self.assertEqual(
-            nba.alert_identity({"game_id": "game-1", "team": "LAL", "name": " Test Player "}),
-            "game-1:LAL:test player",
-        )
-
-        with tempfile.TemporaryDirectory() as directory:
-            state_file = os.path.join(directory, "state.json")
-            with patch.dict(os.environ, {"NBA50_STATE_FILE": state_file}):
-                current = datetime.now(timezone.utc).isoformat()
-                old = (datetime.now(timezone.utc) - timedelta(days=15)).isoformat()
-                nba.save_sent_state({"current": current, "old": old})
-                self.assertEqual(nba.load_sent_state(), {"current": current})
-                with open(state_file, encoding="utf-8") as state:
-                    self.assertEqual(json.load(state)["sent"]["old"], old)
-
-    @patch("nba.get_espn_summary")
-    def test_game_status_controls_player_lookup(self, summary):
-        scheduled = {"id": "future", "status": {"type": {"name": "STATUS_SCHEDULED"}}}
-        self.assertEqual(nba.check_espn_game_for_50_points(scheduled, []), [])
-        summary.assert_not_called()
 
 
 class FrozenDateTime(datetime):
